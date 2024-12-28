@@ -5,8 +5,7 @@ import os
 from dotenv import load_dotenv
 import logging
 from models import model_ids
-from typing import List
-from pydantic import BaseModel
+from tools import FileManager
 import json
 
 # Load environment variables and configure logging
@@ -19,11 +18,6 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
-
-class FileManager(BaseModel):
-    name_no_ext:str
-    content:str
-    allowed_file_ext: List[str] = ['.py', '.html', '.txt', '.md']
 
 # Agent class definition
 class Agent:
@@ -103,17 +97,52 @@ class Agent:
         logging.info("Chat completed.")
         self.print_messages()
 
+    async def achat(self, prompt, fm=False):
+        """Initiate chat with the assistant"""
+        self.messages.append({'role': 'user', 'content': prompt})
+
+        if fm:
+            self.stream = self.client.beta.chat.completions.parse(
+                model=self.model,
+                messages=self.messages,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format=FileManager,
+                stream=True,
+            )
+
+            self.handle_file_response()
+        else:
+            self.stream = self.client.chat.completions.create(
+                model=self.model,
+                messages=self.messages,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                stream=True,
+            )
+        self.response=''
+        
+        for chunk in self.stream:
+            print(chunk.choices[0].delta.content or "", end="")
+            self.response=self.response+str(chunk.choices[0].delta.content)
+
+        self.messages.append({'role':'assistant','content':str(self.response)})
+            
+
+        logging.info("Chat completed.")
+        self.print_messages()
+
     def handle_file_response(self):
         """Handle the file response and write the content to a file in the 'local' subdirectory"""
         file_content = json.loads(self.response.choices[0].message.content)['content']
         file_name = json.loads(self.response.choices[0].message.content)['name_no_ext']
-        file_ext = json.loads(self.response.choices[0].message.content)['allowed_file_ext'][0]
+        file_ext = json.loads(self.response.choices[0].message.content)['allowed_file_ext']
 
         # Create the 'local' subdirectory if it doesn't exist
         local_dir = "local"
         os.makedirs(local_dir, exist_ok=True)
 
-        file_path = os.path.join(local_dir, f"{file_name}.{file_ext}")
+        file_path = os.path.join(local_dir, f"{file_name}{file_ext}")
         logging.info(f"Writing file: {file_path}")
 
         try:
