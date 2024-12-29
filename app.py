@@ -25,7 +25,7 @@ def initialize_session_state_variables():
         st.session_state.streaming_enabled = False
         # Initialize files list in session state if not exists
     if 'uploaded_files' not in st.session_state:
-        st.session_state.uploaded_files = []
+        st.session_state.uploaded_files = set()
 
 
 def load_agents_config():
@@ -139,17 +139,17 @@ def get_top_level_contents(path):
         st.error("Permission denied")
         return []
 
-
-def upload_temp_files():
+def show_file_upload():
     uploaded_files = st.file_uploader("Upload files", accept_multiple_files=True)
+    upload_temp_files(uploaded_files)
+
+def upload_temp_files(uploaded_files):
     if uploaded_files:
-            file_paths = []
             # Save uploaded files and get paths
             for uploaded_file in uploaded_files:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
                     tmp_file.write(uploaded_file.getvalue())
-                    file_paths.append(tmp_file.name)
-            st.session_state.uploaded_files = file_paths
+                    st.session_state.uploaded_files.append(tmp_file.name)
 
 def show_agents_settings():
     # Agent selection and settings
@@ -201,6 +201,7 @@ def manage_chat():
                     st.error(f"Error getting response: {str(e)}")
 
 def show_project_explorer():
+    st.subheader("Project Explorer")
     
     # Display current directory
     current_path = os.getcwd()
@@ -208,27 +209,36 @@ def show_project_explorer():
 
     # Define the subdirectory name
     subdirectory_name = "local"
-
-    # Construct the full path of the subdirectory
     subdirectory_path = os.path.join(current_path, subdirectory_name)
 
     # Create the subdirectory if it doesn't already exist
     if not os.path.exists(subdirectory_path):
         os.makedirs(subdirectory_path)
-        st.write(f"Subdirectory created: `{subdirectory_path}`")
-    else:
-        st.write(f"Subdirectory already exists: `{subdirectory_path}`")
-    
+        st.write(f"Created directory: `{subdirectory_path}`")
+
     # Display top-level files and folders
     contents = get_top_level_contents(subdirectory_path)
+    
+    
+    # Display files with selection toggles
     for item in contents:
-        col1, col2 = st.columns([1, 20])
+        col1, col2, col3 = st.columns([1, 15, 4])
+        
         with col1:
             st.write("📁" if item["type"] == "folder" else "📄")
+        
         with col2:
-            if st.button(item["name"], key=item["path"]):
+            if st.button(item["name"], key=f"view_{item['path']}"):
                 st.session_state.selected_item = item
                 show_file_folder_dialog()
+                
+        with col3:
+            if item["type"] == "file":  # Only show toggle for files
+                if st.toggle("Select", key=f"toggle_{item['path']}", 
+                           value=item["path"] in st.session_state.uploaded_files):
+                    st.session_state.uploaded_files.add(item["path"])
+                else:
+                    st.session_state.uploaded_files.discard(item["path"])
 
 def initialize_agents_config():
     # Load saved agent configurations
@@ -248,7 +258,7 @@ def main():
         
         show_agents_settings()
         
-        upload_temp_files()
+        show_file_upload()
 
         st.subheader('Messages')
         
