@@ -19,6 +19,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
 
+
 # Agent class definition
 class Agent:
     """Agent class for interacting with OpenAI's API."""
@@ -27,6 +28,7 @@ class Agent:
                  messages=[],
                  max_tokens=4096,
                  temperature=0.5,
+                 files=None,
                  **kwargs):
         self.max_tokens = max_tokens
         self.temperature = temperature
@@ -35,11 +37,19 @@ class Agent:
         self.response = None
         self.initialize_client()
         self.initialize_messages(system_prompt)
+        self.upload_files(files)
 
     def initialize_messages(self,system_prompt):
         if self.messages==[]:
             self.messages.append({'role':'system','content':system_prompt})
-        
+    def upload_files(self,files):
+        if files:
+            for filepath in files:
+                file=open(filepath, "rb")
+                file_content = file.read()
+                self.messages.append({'role':'developer','content':str(file_content)})
+            print('Files uploaded')
+
 
     def initialize_client(self):
         vendor_name=model_ids[self.model]['vendor']
@@ -71,27 +81,45 @@ class Agent:
             print(content)
 
 
-    def chat(self, prompt, fm=False):
+    def chat(self, prompt, fm=False,files=[]):
+        self.upload_files(files)
         """Initiate chat with the assistant"""
         self.messages.append({'role': 'user', 'content': prompt})
 
         if fm:
-            self.response = self.client.beta.chat.completions.parse(
-                model=self.model,
-                messages=self.messages,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                response_format=FileManager,
-            )
+            if files!=[]:
+                self.response = self.client.beta.chat.completions.parse(
+                    model=self.model,
+                    messages=self.messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                    response_format=FileManager,
+                )
+            else:
+                self.response = self.client.beta.chat.completions.parse(
+                    model=self.model,
+                    messages=self.messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                    response_format=FileManager,
+                )
 
             self.handle_file_response()
         else:
-            self.response = self.client.chat.completions.create(
-                model=self.model,
-                messages=self.messages,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens
-            )
+            if files!=[]:
+                self.response = self.client.beta.chat.completions.parse(
+                    model=self.model,
+                    messages=self.messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                )
+            else:
+                self.response = self.client.beta.chat.completions.parse(
+                    model=self.model,
+                    messages=self.messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                )
             self.messages.append({'role': 'assistant', 'content': self.response.choices[0].message.content})
 
         logging.info("Chat completed.")
