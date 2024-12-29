@@ -8,14 +8,25 @@ from vendors.myClaude import Agent as ClaudeAgent
 from vendors.myLlama import Agent as LlamaAgent
 from vendors.myPerplexity import Agent as PerplexityAgent
 from models import model_ids
+import streamlit as st
+import tempfile
+import os
 
-# Initialize session state
-if 'current_agent' not in st.session_state:
-    st.session_state.current_agent = None
-if 'agents_config' not in st.session_state:
-    st.session_state.agents_config = {}
-if 'streaming_enabled' not in st.session_state:
-    st.session_state.streaming_enabled = False
+def initialize_session_state_variables():
+    # Initialize session state
+    if "selected_item" not in st.session_state:
+        st.session_state.selected_item = None
+    # Initialize session state
+    if 'current_agent' not in st.session_state:
+        st.session_state.current_agent = None
+    if 'agents_config' not in st.session_state:
+        st.session_state.agents_config = {}
+    if 'streaming_enabled' not in st.session_state:
+        st.session_state.streaming_enabled = False
+        # Initialize files list in session state if not exists
+    if 'uploaded_files' not in st.session_state:
+        st.session_state.uploaded_files = []
+
 
 def load_agents_config():
     """Load saved agent configurations from a JSON file"""
@@ -95,10 +106,6 @@ async def get_streaming_response(agent, prompt):
     await agent.achat(prompt)
 
 
-   # Initialize session state
-if "selected_item" not in st.session_state:
-    st.session_state.selected_item = None
-
 @st.dialog("File/Folder Details")
 def show_file_folder_dialog():
     """Display file or folder details in a dialog."""
@@ -132,31 +139,10 @@ def get_top_level_contents(path):
         st.error("Permission denied")
         return []
 
-import streamlit as st
-import tempfile
-import os
 
-# Initialize files list in session state if not exists
-if 'uploaded_files' not in st.session_state:
-    st.session_state.uploaded_files = []
-
-
-
-def main():
-    st.title("AI Workspace")
-    
-    # Load saved agent configurations
-    if not st.session_state.agents_config:
-        st.session_state.agents_config = load_agents_config()
-    
-    # Sidebar
-    with st.sidebar:
-        st.header("Chat Interface")
-
-
-        uploaded_files = st.file_uploader("Upload files", accept_multiple_files=True)
-        
-        if uploaded_files:
+def upload_temp_files():
+    uploaded_files = st.file_uploader("Upload files", accept_multiple_files=True)
+    if uploaded_files:
             file_paths = []
             # Save uploaded files and get paths
             for uploaded_file in uploaded_files:
@@ -164,55 +150,57 @@ def main():
                     tmp_file.write(uploaded_file.getvalue())
                     file_paths.append(tmp_file.name)
             st.session_state.uploaded_files = file_paths
+
+def show_agents_settings():
+    # Agent selection and settings
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.session_state.selected_agent = st.selectbox(
+            "Select Agent",
+            list(st.session_state.agents_config.keys()),
+            key="agent_selector"
+        )
+    with col2:
+        if st.button("⚙️", key="settings"):
+            show_agent_settings_dialog()
+
+def manage_chat():
+    # Chat interface
+    if st.session_state.selected_agent and st.session_state.selected_agent in st.session_state.agents_config:
+        config = st.session_state.agents_config[st.session_state.selected_agent]
         
-        # Agent selection and settings
-        col1, col2, col3 = st.columns([3, 1, 1])
-        with col1:
-            selected_agent = st.selectbox(
-                "Select Agent",
-                list(st.session_state.agents_config.keys()),
-                key="agent_selector"
+        if st.session_state.current_agent is None:
+            st.session_state.current_agent = initialize_agent(
+                model=config["model"],
+                max_tokens=config["max_tokens"],
+                temperature=config["temperature"],
+                system_prompt=config["system_prompt"]
             )
-        with col2:
-            if st.button("⚙️", key="settings"):
-                show_agent_settings_dialog()
         
-        # Chat interface
-        if selected_agent and selected_agent in st.session_state.agents_config:
-            config = st.session_state.agents_config[selected_agent]
+        # Display chat messages from agent's history
+        if hasattr(st.session_state.current_agent, 'messages'):
+            for message in st.session_state.current_agent.messages:
+                if message['role']!="developer":
+                    with st.chat_message(message['role']):
+                        st.write(message['content'])
+        
+        # Chat input
+        if prompt := st.chat_input("Message your AI assistant..."):
+            with st.chat_message("user"):
+                st.write(prompt)
             
-            if st.session_state.current_agent is None:
-                st.session_state.current_agent = initialize_agent(
-                    model=config["model"],
-                    max_tokens=config["max_tokens"],
-                    temperature=config["temperature"],
-                    system_prompt=config["system_prompt"]
-                )
-            
-            # Display chat messages from agent's history
-            if hasattr(st.session_state.current_agent, 'messages'):
-                for message in st.session_state.current_agent.messages:
-                    if message['role']!="developer":
-                        with st.chat_message(message['role']):
-                            st.write(message['content'])
-            
-            # Chat input
-            if prompt := st.chat_input("Message your AI assistant..."):
-                with st.chat_message("user"):
-                    st.write(prompt)
-                
-                # Get AI response
-                with st.chat_message("assistant"):
-                    try:
+            # Get AI response
+            with st.chat_message("assistant"):
+                try:
 
-                        st.session_state.current_agent.chat(prompt=prompt,files=st.session_state.uploaded_files)
-                            
-                        st.rerun()  # Refresh to show new messages
-                            
-                    except Exception as e:
-                        st.error(f"Error getting response: {str(e)}")
+                    st.session_state.current_agent.chat(prompt=prompt,files=st.session_state.uploaded_files)
+                        
+                    st.rerun()  # Refresh to show new messages
+                        
+                except Exception as e:
+                    st.error(f"Error getting response: {str(e)}")
 
-    st.title("File Explorer with Dialogs")
+def show_project_explorer():
     
     # Display current directory
     current_path = os.getcwd()
@@ -241,6 +229,32 @@ def main():
             if st.button(item["name"], key=item["path"]):
                 st.session_state.selected_item = item
                 show_file_folder_dialog()
+
+def initialize_agents_config():
+    # Load saved agent configurations
+    if not st.session_state.agents_config:
+        st.session_state.agents_config = load_agents_config()
+
+def main():
+    st.title("Project Workspace")
+
+    initialize_session_state_variables()
+
+    initialize_agents_config()
+    
+    # Sidebar
+    with st.sidebar:
+        st.header("Chat")
+        
+        show_agents_settings()
+        
+        upload_temp_files()
+
+        st.subheader('Messages')
+        
+        manage_chat()
+
+    show_project_explorer()
 
 if __name__ == "__main__":
     main()
