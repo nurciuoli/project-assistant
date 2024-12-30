@@ -3,14 +3,12 @@ import os
 from pathlib import Path
 import json
 import asyncio
-from vendors.myOA import Agent as GptAgent
-from vendors.myClaude import Agent as ClaudeAgent
-from vendors.myLlama import Agent as LlamaAgent
-from vendors.myPerplexity import Agent as PerplexityAgent
 from models import model_ids
 import streamlit as st
 import tempfile
 import os
+from src.project_explorer import show_project_explorer
+from chat import manage_chat
 
 def initialize_session_state_variables():
     # Initialize session state
@@ -41,35 +39,6 @@ def save_agents_config():
     with open('agents_config.json', 'w') as f:
         json.dump(st.session_state.agents_config, f)
 
-def initialize_agent(model='gpt-4o-mini', max_tokens=4096, temperature=0.5, 
-                    system_prompt='You are a helpful assistant', messages=[]):
-    """Initialize an AI agent based on the selected model"""
-    agent_classes = {
-        'llama': LlamaAgent,
-        'claude': ClaudeAgent,
-        'gpt': GptAgent,
-        'perplex': PerplexityAgent,
-        'gemini': GptAgent,
-        'grok': GptAgent,
-    }
-    
-    AgentClass = agent_classes[model_ids[model]['vendor']]
-    return AgentClass(model=model, max_tokens=max_tokens, messages=messages,
-                     temperature=temperature, system_prompt=system_prompt)
-
-def get_top_level_contents(path):
-    """Get only the top-level files and folders in the given path"""
-    contents = []
-    try:
-        for entry in os.scandir(path):
-            contents.append({
-                "label": entry.name,
-                "type": "folder" if entry.is_dir() else "file"
-            })
-        return sorted(contents, key=lambda x: (x["type"] != "folder", x["label"].lower()))
-    except PermissionError:
-        st.error(f"Permission denied accessing {path}")
-        return []
 
 @st.dialog("Configure AI Agent")
 def show_agent_settings_dialog():
@@ -101,43 +70,6 @@ def show_agent_settings_dialog():
         else:
             st.error("Please provide an agent name")
 
-async def get_streaming_response(agent, prompt):
-    """Handle streaming response from agent"""
-    await agent.achat(prompt)
-
-
-@st.dialog("File/Folder Details")
-def show_file_folder_dialog():
-    """Display file or folder details in a dialog."""
-    if st.session_state.selected_item:
-        item = st.session_state.selected_item
-        if item["type"] == "file":
-            st.subheader(f"File: {item['name']}")
-            try:
-                with open(item["path"], "r") as f:
-                    content = f.read()
-                st.text_area("Content", content, height=300)
-            except Exception as e:
-                st.error(f"Error reading file: {str(e)}")
-        elif item["type"] == "folder":
-            st.subheader(f"Folder: {item['name']}")
-            try:
-                for entry in os.scandir(item["path"]):
-                    icon = "📁" if entry.is_dir() else "📄"
-                    st.write(f"{icon} {entry.name}")
-            except Exception as e:
-                st.error(f"Error reading folder: {str(e)}")
-
-def get_top_level_contents(path):
-    """Get the top-level files and folders in a given path."""
-    try:
-        return [
-            {"name": entry.name, "path": entry.path, "type": "folder" if entry.is_dir() else "file"}
-            for entry in os.scandir(path)
-        ]
-    except PermissionError:
-        st.error("Permission denied")
-        return []
 
 def show_file_upload():
     uploaded_files = st.file_uploader("Upload files", accept_multiple_files=True)
@@ -164,81 +96,6 @@ def show_agents_settings():
         if st.button("⚙️", key="settings"):
             show_agent_settings_dialog()
 
-def manage_chat():
-    # Chat interface
-    if st.session_state.selected_agent and st.session_state.selected_agent in st.session_state.agents_config:
-        config = st.session_state.agents_config[st.session_state.selected_agent]
-        
-        if st.session_state.current_agent is None:
-            st.session_state.current_agent = initialize_agent(
-                model=config["model"],
-                max_tokens=config["max_tokens"],
-                temperature=config["temperature"],
-                system_prompt=config["system_prompt"]
-            )
-        
-        # Display chat messages from agent's history
-        if hasattr(st.session_state.current_agent, 'messages'):
-            for message in st.session_state.current_agent.messages:
-                if message['role']!="developer":
-                    with st.chat_message(message['role']):
-                        st.write(message['content'])
-        
-        # Chat input
-        if prompt := st.chat_input("Message your AI assistant..."):
-            with st.chat_message("user"):
-                st.write(prompt)
-            
-            # Get AI response
-            with st.chat_message("assistant"):
-                try:
-
-                    st.session_state.current_agent.chat(prompt=prompt,files=st.session_state.uploaded_files)
-                        
-                    st.rerun()  # Refresh to show new messages
-                        
-                except Exception as e:
-                    st.error(f"Error getting response: {str(e)}")
-
-def show_project_explorer():
-    st.subheader("Project Explorer")
-    
-    # Display current directory
-    current_path = os.getcwd()
-    st.write(f"Current directory: `{current_path}`")
-
-    # Define the subdirectory name
-    subdirectory_name = "local"
-    subdirectory_path = os.path.join(current_path, subdirectory_name)
-
-    # Create the subdirectory if it doesn't already exist
-    if not os.path.exists(subdirectory_path):
-        os.makedirs(subdirectory_path)
-        st.write(f"Created directory: `{subdirectory_path}`")
-
-    # Display top-level files and folders
-    contents = get_top_level_contents(subdirectory_path)
-    
-    
-    # Display files with selection toggles
-    for item in contents:
-        col1, col2, col3 = st.columns([1, 15, 4])
-        
-        with col1:
-            st.write("📁" if item["type"] == "folder" else "📄")
-        
-        with col2:
-            if st.button(item["name"], key=f"view_{item['path']}"):
-                st.session_state.selected_item = item
-                show_file_folder_dialog()
-                
-        with col3:
-            if item["type"] == "file":  # Only show toggle for files
-                if st.toggle("Select", key=f"toggle_{item['path']}", 
-                           value=item["path"] in st.session_state.uploaded_files):
-                    st.session_state.uploaded_files.add(item["path"])
-                else:
-                    st.session_state.uploaded_files.discard(item["path"])
 
 def initialize_agents_config():
     # Load saved agent configurations
@@ -262,7 +119,7 @@ def main():
 
         st.subheader('Messages')
         
-        manage_chat()
+        asyncio.run(manage_chat())
 
     show_project_explorer()
 

@@ -87,46 +87,31 @@ class Agent:
         self.messages.append({'role': 'user', 'content': prompt})
 
         if fm:
-            if files!=[]:
-                self.response = self.client.beta.chat.completions.parse(
-                    model=self.model,
-                    messages=self.messages,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                    response_format=FileManager,
-                )
-            else:
-                self.response = self.client.beta.chat.completions.parse(
-                    model=self.model,
-                    messages=self.messages,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                    response_format=FileManager,
-                )
+            self.response = self.client.beta.chat.completions.parse(
+                model=self.model,
+                messages=self.messages,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format=FileManager,
+            )
 
             self.handle_file_response()
         else:
-            if files!=[]:
-                self.response = self.client.beta.chat.completions.parse(
-                    model=self.model,
-                    messages=self.messages,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                )
-            else:
-                self.response = self.client.beta.chat.completions.parse(
-                    model=self.model,
-                    messages=self.messages,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                )
+            self.response = self.client.beta.chat.completions.parse(
+                model=self.model,
+                messages=self.messages,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+            )
+
             self.messages.append({'role': 'assistant', 'content': self.response.choices[0].message.content})
 
         logging.info("Chat completed.")
         self.print_messages()
 
-    async def achat(self, prompt, fm=False):
-        """Initiate chat with the assistant"""
+    async def achat(self, prompt, fm=False, files=[]):
+        self.upload_files(files)
+        """Initiate asynchronous chat with the assistant"""
         self.messages.append({'role': 'user', 'content': prompt})
 
         if fm:
@@ -138,7 +123,6 @@ class Agent:
                 response_format=FileManager,
                 stream=True,
             )
-
             self.handle_file_response()
         else:
             self.stream = self.client.chat.completions.create(
@@ -148,17 +132,8 @@ class Agent:
                 max_tokens=self.max_tokens,
                 stream=True,
             )
-        self.response=''
-        
-        for chunk in self.stream:
-            print(chunk.choices[0].delta.content or "", end="")
-            self.response=self.response+str(chunk.choices[0].delta.content)
-
-        self.messages.append({'role':'assistant','content':str(self.response)})
             
-
-        logging.info("Chat completed.")
-        self.print_messages()
+        return self.stream
 
     def handle_file_response(self):
         """Handle the file response and write the content to a file in the 'local' subdirectory"""
