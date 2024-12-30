@@ -109,7 +109,7 @@ class Agent:
         logging.info("Chat completed.")
         self.print_messages()
 
-    async def achat(self, prompt, fm=False, files=[]):
+    def achat(self, prompt, fm=False, files=[]):
         self.upload_files(files)
         """Initiate asynchronous chat with the assistant"""
         self.messages.append({'role': 'user', 'content': prompt})
