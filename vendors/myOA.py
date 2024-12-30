@@ -81,7 +81,7 @@ class Agent:
             print(content)
 
 
-    def chat(self, prompt, fm=False,files=[]):
+    def chat(self, prompt, fm=False,files=[],tools=None):
         self.upload_files(files)
         """Initiate chat with the assistant"""
         self.messages.append({'role': 'user', 'content': prompt})
@@ -97,11 +97,12 @@ class Agent:
 
             self.handle_file_response()
         else:
-            self.response = self.client.beta.chat.completions.parse(
+            self.response = self.client.chat.completions.create(
                 model=self.model,
                 messages=self.messages,
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
+                tools=tools,
             )
 
             self.messages.append({'role': 'assistant', 'content': self.response.choices[0].message.content})
@@ -109,7 +110,7 @@ class Agent:
         logging.info("Chat completed.")
         self.print_messages()
 
-    def achat(self, prompt, fm=False, files=[]):
+    def achat(self, prompt, fm=False, files=[],tools=None):
         self.upload_files(files)
         """Initiate asynchronous chat with the assistant"""
         self.messages.append({'role': 'user', 'content': prompt})
@@ -131,6 +132,7 @@ class Agent:
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
                 stream=True,
+                tools=tools,
             )
             
         return self.stream
